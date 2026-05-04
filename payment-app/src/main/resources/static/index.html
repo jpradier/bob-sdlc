@@ -1,0 +1,531 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Payment Processing Demo</title>
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        .header {
+            text-align: center;
+            color: white;
+            margin-bottom: 40px;
+        }
+
+        .header h1 {
+            font-size: 2.5rem;
+            margin-bottom: 10px;
+        }
+
+        .header p {
+            font-size: 1.1rem;
+            opacity: 0.9;
+        }
+
+        .main-content {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 30px;
+            margin-bottom: 30px;
+        }
+
+        @media (max-width: 968px) {
+            .main-content {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        .card {
+            background: white;
+            border-radius: 12px;
+            padding: 30px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+        }
+
+        .card h2 {
+            font-size: 1.5rem;
+            margin-bottom: 20px;
+            color: #333;
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 8px;
+            color: #555;
+            font-weight: 500;
+        }
+
+        .form-group input {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 1rem;
+            transition: border-color 0.3s;
+        }
+
+        .form-group input:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        .form-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 15px;
+        }
+
+        .btn {
+            width: 100%;
+            padding: 14px;
+            border: none;
+            border-radius: 8px;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+
+        .btn-primary:hover:not(:disabled) {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+        }
+
+        .btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+
+        .test-cards {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+
+        .test-cards h3 {
+            font-size: 0.9rem;
+            color: #666;
+            margin-bottom: 10px;
+        }
+
+        .test-cards p {
+            font-size: 0.85rem;
+            color: #888;
+            margin: 5px 0;
+        }
+
+        .alert {
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+
+        .alert-success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+
+        .alert-error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+
+        .transaction-list {
+            max-height: 600px;
+            overflow-y: auto;
+        }
+
+        .transaction-item {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 15px;
+            border-left: 4px solid #667eea;
+        }
+
+        .transaction-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+
+        .transaction-id {
+            font-family: monospace;
+            font-size: 0.85rem;
+            color: #666;
+        }
+
+        .badge {
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            text-transform: uppercase;
+        }
+
+        .badge-authorized {
+            background: #fff3cd;
+            color: #856404;
+        }
+
+        .badge-captured {
+            background: #d4edda;
+            color: #155724;
+        }
+
+        .badge-declined {
+            background: #f8d7da;
+            color: #721c24;
+        }
+
+        .badge-refunded {
+            background: #e2e3e5;
+            color: #383d41;
+        }
+
+        .transaction-details {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 10px;
+            font-size: 0.9rem;
+        }
+
+        .transaction-detail {
+            color: #666;
+        }
+
+        .transaction-detail strong {
+            color: #333;
+        }
+
+        .transaction-actions {
+            margin-top: 10px;
+            display: flex;
+            gap: 10px;
+        }
+
+        .btn-small {
+            padding: 6px 12px;
+            font-size: 0.85rem;
+            width: auto;
+        }
+
+        .btn-secondary {
+            background: #6c757d;
+            color: white;
+        }
+
+        .btn-danger {
+            background: #dc3545;
+            color: white;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 20px;
+            color: #666;
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 40px;
+            color: #999;
+        }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect } = React;
+
+        function App() {
+            const [formData, setFormData] = useState({
+                cardNumber: '',
+                cardExpiry: '',
+                cvv: '',
+                amount: ''
+            });
+            const [transactions, setTransactions] = useState([]);
+            const [loading, setLoading] = useState(false);
+            const [message, setMessage] = useState(null);
+
+            useEffect(() => {
+                fetchTransactions();
+            }, []);
+
+            const fetchTransactions = async () => {
+                try {
+                    const response = await fetch('/api/payments/history');
+                    const data = await response.json();
+                    setTransactions(data);
+                } catch (error) {
+                    console.error('Error fetching transactions:', error);
+                }
+            };
+
+            const handleInputChange = (e) => {
+                const { name, value } = e.target;
+                setFormData(prev => ({ ...prev, [name]: value }));
+            };
+
+            const handleSubmit = async (e) => {
+                e.preventDefault();
+                setLoading(true);
+                setMessage(null);
+
+                try {
+                    const response = await fetch('/api/payments/authorize', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(formData)
+                    });
+
+                    const data = await response.json();
+                    
+                    if (data.status === 'AUTHORIZED') {
+                        setMessage({ type: 'success', text: `Payment authorized! Transaction ID: ${data.transactionId}` });
+                        setFormData({ cardNumber: '', cardExpiry: '', cvv: '', amount: '' });
+                    } else {
+                        setMessage({ type: 'error', text: `Payment declined: ${data.responseMessage}` });
+                    }
+
+                    fetchTransactions();
+                } catch (error) {
+                    setMessage({ type: 'error', text: 'Error processing payment' });
+                } finally {
+                    setLoading(false);
+                }
+            };
+
+            const handleCapture = async (transactionId) => {
+                try {
+                    const response = await fetch('/api/payments/capture', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ transactionId })
+                    });
+
+                    if (response.ok) {
+                        fetchTransactions();
+                    }
+                } catch (error) {
+                    console.error('Error capturing payment:', error);
+                }
+            };
+
+            const handleRefund = async (transactionId) => {
+                try {
+                    const response = await fetch('/api/payments/refund', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ transactionId })
+                    });
+
+                    if (response.ok) {
+                        fetchTransactions();
+                    }
+                } catch (error) {
+                    console.error('Error refunding payment:', error);
+                }
+            };
+
+            const fillTestCard = (cardNumber) => {
+                setFormData({
+                    cardNumber,
+                    cardExpiry: '12/25',
+                    cvv: '123',
+                    amount: '100.00'
+                });
+            };
+
+            return (
+                <div className="container">
+                    <div className="header">
+                        <h1>💳 Payment Processing Demo</h1>
+                        <p>Mock credit card payment processing application</p>
+                    </div>
+
+                    <div className="main-content">
+                        <div className="card">
+                            <h2>Process Payment</h2>
+
+                            <div className="test-cards">
+                                <h3>Test Cards (click to use):</h3>
+                                <p style={{cursor: 'pointer'}} onClick={() => fillTestCard('4263970000005262')}>
+                                    Visa: 4263970000005262
+                                </p>
+                                <p style={{cursor: 'pointer'}} onClick={() => fillTestCard('5425230000004415')}>
+                                    MasterCard: 5425230000004415
+                                </p>
+                                <p style={{cursor: 'pointer'}} onClick={() => fillTestCard('374101000000608')}>
+                                    Amex: 374101000000608
+                                </p>
+                            </div>
+
+                            {message && (
+                                <div className={`alert alert-${message.type}`}>
+                                    {message.text}
+                                </div>
+                            )}
+
+                            <form onSubmit={handleSubmit}>
+                                <div className="form-group">
+                                    <label>Card Number</label>
+                                    <input
+                                        type="text"
+                                        name="cardNumber"
+                                        value={formData.cardNumber}
+                                        onChange={handleInputChange}
+                                        placeholder="1234 5678 9012 3456"
+                                        required
+                                    />
+                                </div>
+
+                                <div className="form-row">
+                                    <div className="form-group">
+                                        <label>Expiry (MM/YY)</label>
+                                        <input
+                                            type="text"
+                                            name="cardExpiry"
+                                            value={formData.cardExpiry}
+                                            onChange={handleInputChange}
+                                            placeholder="12/26"
+                                            required
+                                        />
+                                    </div>
+
+                                    <div className="form-group">
+                                        <label>CVV</label>
+                                        <input
+                                            type="text"
+                                            name="cvv"
+                                            value={formData.cvv}
+                                            onChange={handleInputChange}
+                                            placeholder="123"
+                                            required
+                                        />
+                                    </div>
+                                </div>
+
+                                <div className="form-group">
+                                    <label>Amount</label>
+                                    <input
+                                        type="number"
+                                        name="amount"
+                                        value={formData.amount}
+                                        onChange={handleInputChange}
+                                        placeholder="100.00"
+                                        step="0.01"
+                                        required
+                                    />
+                                </div>
+
+                                <button type="submit" className="btn btn-primary" disabled={loading}>
+                                    {loading ? 'Processing...' : 'Authorize Payment'}
+                                </button>
+                            </form>
+                        </div>
+
+                        <div className="card">
+                            <h2>Transaction History</h2>
+                            <div className="transaction-list">
+                                {transactions.length === 0 ? (
+                                    <div className="empty-state">
+                                        No transactions yet
+                                    </div>
+                                ) : (
+                                    transactions.map(tx => (
+                                        <div key={tx.id} className="transaction-item">
+                                            <div className="transaction-header">
+                                                <span className="transaction-id">{tx.id}</span>
+                                                <span className={`badge badge-${tx.status.toLowerCase()}`}>
+                                                    {tx.status}
+                                                </span>
+                                            </div>
+                                            <div className="transaction-details">
+                                                <div className="transaction-detail">
+                                                    <strong>Card:</strong> {tx.cardNumber}
+                                                </div>
+                                                <div className="transaction-detail">
+                                                    <strong>Amount:</strong> ${tx.amount}
+                                                </div>
+                                                <div className="transaction-detail">
+                                                    <strong>Type:</strong> {tx.type}
+                                                </div>
+                                                <div className="transaction-detail">
+                                                    <strong>Code:</strong> {tx.responseCode}
+                                                </div>
+                                            </div>
+                                            {tx.authorizationCode && (
+                                                <div style={{marginTop: '10px', fontSize: '0.85rem', color: '#666'}}>
+                                                    Auth Code: {tx.authorizationCode}
+                                                </div>
+                                            )}
+                                            {tx.status === 'AUTHORIZED' && (
+                                                <div className="transaction-actions">
+                                                    <button 
+                                                        className="btn btn-small btn-primary"
+                                                        onClick={() => handleCapture(tx.id)}
+                                                    >
+                                                        Capture
+                                                    </button>
+                                                </div>
+                                            )}
+                                            {tx.status === 'CAPTURED' && (
+                                                <div className="transaction-actions">
+                                                    <button 
+                                                        className="btn btn-small btn-danger"
+                                                        onClick={() => handleRefund(tx.id)}
+                                                    >
+                                                        Refund
+                                                    </button>
+                                                </div>
+                                            )}
+                                        </div>
+                                    ))
+                                )}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            );
+        }
+
+        ReactDOM.render(<App />, document.getElementById('root'));
+    </script>
+</body>
+</html>

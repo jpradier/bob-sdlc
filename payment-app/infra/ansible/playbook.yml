@@ -1,0 +1,95 @@
+---
+# ============================================================================
+# Payment Application Configuration Playbook
+# ============================================================================
+# This playbook configures the OpenShift environment after Terraform
+# provisioning. It targets both staging and production namespaces.
+#
+# Prerequisites:
+# - Terraform infrastructure must be provisioned first
+# - OpenShift CLI (oc) must be installed and configured
+# - Ansible kubernetes.core collection must be installed
+#
+# Usage:
+#   ansible-playbook -i inventory/hosts.yml playbook.yml
+#
+# To target specific namespace:
+#   ansible-playbook -i inventory/hosts.yml playbook.yml --limit staging
+#   ansible-playbook -i inventory/hosts.yml playbook.yml --limit prod
+# ============================================================================
+
+- name: Configure Payment Application Environment
+  hosts: openshift_cluster
+  gather_facts: false
+  
+  vars:
+    # Namespace configuration
+    namespaces:
+      - name: bob-demo-staging
+        environment: staging
+        db_password: "changeme-staging"
+        app_config:
+          spring_profiles_active: "staging"
+          log_level: "DEBUG"
+          cache_ttl: "300"
+      - name: bob-demo-prod
+        environment: prod
+        db_password: "changeme-prod"
+        app_config:
+          spring_profiles_active: "prod"
+          log_level: "INFO"
+          cache_ttl: "600"
+    
+    # PostgreSQL configuration
+    postgres_service: "postgres-service"
+    postgres_port: "5432"
+    postgres_database: "paymentdb"
+    postgres_user: "paymentuser"
+    
+    # Service account
+    service_account_name: "payment-service-sa"
+    
+    # Health check configuration
+    postgres_ready_timeout: 300
+    postgres_ready_retries: 30
+    postgres_ready_delay: 10
+
+  tasks:
+    - name: Display playbook information
+      ansible.builtin.debug:
+        msg:
+          - "=========================================="
+          - "Payment Application Configuration"
+          - "=========================================="
+          - "Configuring {{ namespaces | length }} namespace(s)"
+          - "Namespaces: {{ namespaces | map(attribute='name') | list | join(', ') }}"
+          - "=========================================="
+
+    - name: Configure each namespace
+      ansible.builtin.include_role:
+        name: payment-app
+      loop: "{{ namespaces }}"
+      loop_control:
+        loop_var: namespace_config
+        label: "{{ namespace_config.name }}"
+
+    - name: Display completion summary
+      ansible.builtin.debug:
+        msg:
+          - "=========================================="
+          - "Configuration Complete"
+          - "=========================================="
+          - "All namespaces have been configured successfully"
+          - "PostgreSQL credentials secrets created"
+          - "Application ConfigMaps created"
+          - "Service account permissions verified"
+          - "PostgreSQL readiness confirmed"
+          - "Pre-flight health checks passed"
+          - "=========================================="
+          - "Next steps:"
+          - "1. Deploy payment-service application"
+          - "2. Verify application connectivity to PostgreSQL"
+          - "3. Run integration tests"
+          - "=========================================="
+
+# Made with Bob

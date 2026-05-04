@@ -1,0 +1,27 @@
+---
+# ============================================================================
+# Ansible Requirements
+# ============================================================================
+# This file lists all required Ansible collections and roles for the
+# payment application configuration playbook.
+#
+# Installation:
+#   ansible-galaxy collection install -r requirements.yml
+#   ansible-galaxy role install -r requirements.yml
+# ============================================================================
+
+collections:
+  # Kubernetes/OpenShift collection for managing K8s resources
+  - name: kubernetes.core
+    version: ">=2.4.0"
+    source: https://galaxy.ansible.com
+
+  # Community general collection for utility modules
+  - name: community.general
+    version: ">=7.0.0"
+    source: https://galaxy.ansible.com
+
+# No external roles required - using local roles only
+roles: []
+
+# Made with Bob

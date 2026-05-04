@@ -1,0 +1,38 @@
+# Ansible specific files
+*.retry
+*.log
+ansible.log
+
+# Vault password files
+.vault_pass
+.vault_password
+vault_pass.txt
+
+# Temporary files
+*.tmp
+*.swp
+*~
+
+# Python bytecode
+*.pyc
+__pycache__/
+
+# Fact cache
+/tmp/ansible_facts/
+
+# Collections and roles downloaded
+collections/
+roles/external/
+
+# Environment files
+.env
+.env.local
+
+# IDE files
+.vscode/
+.idea/
+*.iml
+
+# OS files
+.DS_Store
+Thumbs.db

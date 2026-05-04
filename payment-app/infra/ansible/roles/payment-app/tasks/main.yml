@@ -1,0 +1,301 @@
+---
+# ============================================================================
+# Payment Application Configuration Tasks
+# ============================================================================
+# This role configures a single namespace with all required resources for
+# the payment application deployment.
+#
+# Variables required (passed from playbook):
+# - namespace_config: Dictionary containing namespace configuration
+#   - name: Namespace name (e.g., bob-demo-staging)
+#   - environment: Environment identifier (staging/prod)
+#   - db_password: PostgreSQL password
+#   - app_config: Application configuration dictionary
+# ============================================================================
+
+- name: Display namespace configuration
+  ansible.builtin.debug:
+    msg:
+      - "Configuring namespace: {{ namespace_config.name }}"
+      - "Environment: {{ namespace_config.environment }}"
+      - "PostgreSQL service: {{ postgres_service }}"
+
+# ============================================================================
+# STEP 1: Create PostgreSQL Credentials Secret
+# ============================================================================
+
+- name: Create PostgreSQL credentials secret
+  kubernetes.core.k8s:
+    host: "{{ k8s_host }}"
+    api_key: "{{ k8s_api_key }}"
+    validate_certs: "{{ k8s_validate_certs }}"
+    state: present
+    definition:
+      apiVersion: v1
+      kind: Secret
+      metadata:
+        name: postgres-credentials
+        namespace: "{{ namespace_config.name }}"
+        labels:
+          app: payment-service
+          component: database
+          environment: "{{ namespace_config.environment }}"
+          managed-by: ansible
+      type: Opaque
+      stringData:
+        DB_URL: "jdbc:postgresql://{{ postgres_service }}:{{ postgres_port }}/{{ postgres_database }}"
+        DB_USER: "{{ postgres_user }}"
+        DB_PASSWORD: "{{ namespace_config.db_password }}"
+        POSTGRES_HOST: "{{ postgres_service }}"
+        POSTGRES_PORT: "{{ postgres_port }}"
+        POSTGRES_DB: "{{ postgres_database }}"
+        POSTGRES_USER: "{{ postgres_user }}"
+        POSTGRES_PASSWORD: "{{ namespace_config.db_password }}"
+  register: postgres_secret_result
+
+- name: Display PostgreSQL secret creation result
+  ansible.builtin.debug:
+    msg: "PostgreSQL credentials secret created/updated in {{ namespace_config.name }}"
+  when: postgres_secret_result.changed
+
+# ============================================================================
+# STEP 2: Create Application ConfigMap
+# ============================================================================
+
+- name: Create application configuration ConfigMap
+  kubernetes.core.k8s:
+    host: "{{ k8s_host }}"
+    api_key: "{{ k8s_api_key }}"
+    validate_certs: "{{ k8s_validate_certs }}"
+    state: present
+    definition:
+      apiVersion: v1
+      kind: ConfigMap
+      metadata:
+        name: payment-app-config
+        namespace: "{{ namespace_config.name }}"
+        labels:
+          app: payment-service
+          component: configuration
+          environment: "{{ namespace_config.environment }}"
+          managed-by: ansible
+      data:
+        SPRING_PROFILES_ACTIVE: "{{ namespace_config.app_config.spring_profiles_active }}"
+        LOG_LEVEL: "{{ namespace_config.app_config.log_level }}"
+        CACHE_TTL: "{{ namespace_config.app_config.cache_ttl }}"
+        ENVIRONMENT: "{{ namespace_config.environment }}"
+        APP_NAME: "payment-service"
+        APP_VERSION: "1.0.0"
+        POSTGRES_SERVICE_NAME: "{{ postgres_service }}"
+        application.properties: |
+          # Spring Boot Configuration
+          spring.application.name=payment-service
+          spring.profiles.active={{ namespace_config.app_config.spring_profiles_active }}
+          
+          # Database Configuration (credentials from secret)
+          spring.datasource.url=${DB_URL}
+          spring.datasource.username=${DB_USER}
+          spring.datasource.password=${DB_PASSWORD}
+          spring.datasource.driver-class-name=org.postgresql.Driver
+          
+          # JPA/Hibernate Configuration
+          spring.jpa.hibernate.ddl-auto=update
+          spring.jpa.show-sql=false
+          spring.jpa.properties.hibernate.dialect=org.hibernate.dialect.PostgreSQLDialect
+          spring.jpa.properties.hibernate.format_sql=true
+          
+          # Logging Configuration
+          logging.level.root={{ namespace_config.app_config.log_level }}
+          logging.level.com.demo.payment=DEBUG
+          logging.pattern.console=%d{yyyy-MM-dd HH:mm:ss} - %msg%n
+          
+          # Cache Configuration
+          spring.cache.type=simple
+          spring.cache.cache-names=transactions
+          cache.ttl={{ namespace_config.app_config.cache_ttl }}
+          
+          # Server Configuration
+          server.port=8080
+          management.endpoints.web.exposure.include=health,info,metrics
+          management.endpoint.health.show-details=always
+  register: configmap_result
+
+- name: Display ConfigMap creation result
+  ansible.builtin.debug:
+    msg: "Application ConfigMap created/updated in {{ namespace_config.name }}"
+  when: configmap_result.changed
+
+# ============================================================================
+# STEP 3: Verify Service Account Permissions
+# ============================================================================
+
+- name: Verify service account exists
+  kubernetes.core.k8s_info:
+    host: "{{ k8s_host }}"
+    api_key: "{{ k8s_api_key }}"
+    validate_certs: "{{ k8s_validate_certs }}"
+    kind: ServiceAccount
+    name: "{{ service_account_name }}"
+    namespace: "{{ namespace_config.name }}"
+  register: service_account_info
+
+- name: Assert service account exists
+  ansible.builtin.assert:
+    that:
+      - service_account_info.resources | length > 0
+    fail_msg: "Service account {{ service_account_name }} not found in {{ namespace_config.name }}"
+    success_msg: "Service account {{ service_account_name }} verified in {{ namespace_config.name }}"
+
+- name: Verify role binding exists
+  kubernetes.core.k8s_info:
+    host: "{{ k8s_host }}"
+    api_key: "{{ k8s_api_key }}"
+    validate_certs: "{{ k8s_validate_certs }}"
+    kind: RoleBinding
+    name: payment-service-rolebinding
+    namespace: "{{ namespace_config.name }}"
+  register: role_binding_info
+
+- name: Assert role binding exists
+  ansible.builtin.assert:
+    that:
+      - role_binding_info.resources | length > 0
+    fail_msg: "RoleBinding payment-service-rolebinding not found in {{ namespace_config.name }}"
+    success_msg: "RoleBinding verified in {{ namespace_config.name }}"
+
+- name: Display service account verification result
+  ansible.builtin.debug:
+    msg:
+      - "Service account permissions verified:"
+      - "  - ServiceAccount: {{ service_account_name }}"
+      - "  - RoleBinding: payment-service-rolebinding"
+      - "  - Namespace: {{ namespace_config.name }}"
+
+# ============================================================================
+# STEP 4: Wait for PostgreSQL Pod to be Ready
+# ============================================================================
+
+- name: Wait for PostgreSQL pod to be ready
+  kubernetes.core.k8s_info:
+    host: "{{ k8s_host }}"
+    api_key: "{{ k8s_api_key }}"
+    validate_certs: "{{ k8s_validate_certs }}"
+    kind: Pod
+    namespace: "{{ namespace_config.name }}"
+    label_selectors:
+      - app=postgres
+  register: postgres_pods
+  until:
+    - postgres_pods.resources | length > 0
+    - postgres_pods.resources[0].status.phase == "Running"
+    - postgres_pods.resources[0].status.conditions | selectattr('type', 'equalto', 'Ready') | map(attribute='status') | first == "True"
+  retries: "{{ postgres_ready_retries }}"
+  delay: "{{ postgres_ready_delay }}"
+
+- name: Display PostgreSQL readiness result
+  ansible.builtin.debug:
+    msg:
+      - "PostgreSQL pod is ready in {{ namespace_config.name }}"
+      - "Pod name: {{ postgres_pods.resources[0].metadata.name }}"
+      - "Pod status: {{ postgres_pods.resources[0].status.phase }}"
+      - "Pod IP: {{ postgres_pods.resources[0].status.podIP }}"
+
+# ============================================================================
+# STEP 5: Verify PostgreSQL Service
+# ============================================================================
+
+- name: Verify PostgreSQL service exists
+  kubernetes.core.k8s_info:
+    host: "{{ k8s_host }}"
+    api_key: "{{ k8s_api_key }}"
+    validate_certs: "{{ k8s_validate_certs }}"
+    kind: Service
+    name: "{{ postgres_service }}"
+    namespace: "{{ namespace_config.name }}"
+  register: postgres_service_info
+
+- name: Assert PostgreSQL service exists
+  ansible.builtin.assert:
+    that:
+      - postgres_service_info.resources | length > 0
+      - postgres_service_info.resources[0].spec.type == "ClusterIP"
+      - postgres_service_info.resources[0].spec.ports[0].port == postgres_port | int
+    fail_msg: "PostgreSQL service {{ postgres_service }} not properly configured in {{ namespace_config.name }}"
+    success_msg: "PostgreSQL service verified in {{ namespace_config.name }}"
+
+- name: Display PostgreSQL service details
+  ansible.builtin.debug:
+    msg:
+      - "PostgreSQL service verified:"
+      - "  - Service name: {{ postgres_service }}"
+      - "  - Service type: {{ postgres_service_info.resources[0].spec.type }}"
+      - "  - Cluster IP: {{ postgres_service_info.resources[0].spec.clusterIP }}"
+      - "  - Port: {{ postgres_service_info.resources[0].spec.ports[0].port }}"
+      - "  - Namespace: {{ namespace_config.name }}"
+
+# ============================================================================
+# STEP 6: Run Pre-flight Health Check
+# ============================================================================
+
+- name: Run pre-flight health check - verify namespace resources
+  kubernetes.core.k8s_info:
+    host: "{{ k8s_host }}"
+    api_key: "{{ k8s_api_key }}"
+    validate_certs: "{{ k8s_validate_certs }}"
+    kind: "{{ item.kind }}"
+    name: "{{ item.name }}"
+    namespace: "{{ namespace_config.name }}"
+  loop:
+    - { kind: "Secret", name: "postgres-credentials" }
+    - { kind: "ConfigMap", name: "payment-app-config" }
+    - { kind: "ServiceAccount", name: "{{ service_account_name }}" }
+    - { kind: "Service", name: "{{ postgres_service }}" }
+  register: preflight_resources
+
+- name: Assert all required resources exist
+  ansible.builtin.assert:
+    that:
+      - item.resources | length > 0
+    fail_msg: "Required resource {{ item.item.kind }}/{{ item.item.name }} not found"
+    success_msg: "Resource {{ item.item.kind }}/{{ item.item.name }} verified"
+  loop: "{{ preflight_resources.results }}"
+  loop_control:
+    label: "{{ item.item.kind }}/{{ item.item.name }}"
+
+- name: Verify NetworkPolicy exists
+  kubernetes.core.k8s_info:
+    host: "{{ k8s_host }}"
+    api_key: "{{ k8s_api_key }}"
+    validate_certs: "{{ k8s_validate_certs }}"
+    kind: NetworkPolicy
+    namespace: "{{ namespace_config.name }}"
+  register: network_policies
+
+- name: Assert NetworkPolicies are configured
+  ansible.builtin.assert:
+    that:
+      - network_policies.resources | length > 0
+    fail_msg: "No NetworkPolicies found in {{ namespace_config.name }}"
+    success_msg: "NetworkPolicies verified in {{ namespace_config.name }}"
+
+- name: Display pre-flight health check summary
+  ansible.builtin.debug:
+    msg:
+      - "=========================================="
+      - "Pre-flight Health Check: PASSED"
+      - "=========================================="
+      - "Namespace: {{ namespace_config.name }}"
+      - "Environment: {{ namespace_config.environment }}"
+      - ""
+      - "Resources Verified:"
+      - "  ✓ Secret: postgres-credentials"
+      - "  ✓ ConfigMap: payment-app-config"
+      - "  ✓ ServiceAccount: {{ service_account_name }}"
+      - "  ✓ Service: {{ postgres_service }}"
+      - "  ✓ NetworkPolicies: {{ network_policies.resources | length }} configured"
+      - "  ✓ PostgreSQL Pod: Running and Ready"
+      - ""
+      - "Namespace is ready for application deployment"
+      - "=========================================="
+
+# Made with Bob
