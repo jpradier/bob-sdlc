@@ -141,33 +141,62 @@ jobs:
 
       - name: Verify secrets are configured
         run: |
-          if [ -z "${{ secrets.OPENSHIFT_REGISTRY }}" ]; then
-            echo "❌ ERROR: OPENSHIFT_REGISTRY secret is not configured"
-            echo "Please add it in: Settings → Secrets and variables → Actions → Secrets"
+          if [ -z "${{ secrets.OPENSHIFT_SERVER }}" ]; then
+            echo "❌ ERROR: OPENSHIFT_SERVER secret is not configured"
             exit 1
           fi
           if [ -z "${{ secrets.OPENSHIFT_TOKEN }}" ]; then
             echo "❌ ERROR: OPENSHIFT_TOKEN secret is not configured"
-            echo "Please add it in: Settings → Secrets and variables → Actions → Secrets"
             exit 1
           fi
-          echo "✅ Secrets are configured"
+          if [ -z "${{ secrets.OPENSHIFT_REGISTRY }}" ]; then
+            echo "❌ ERROR: OPENSHIFT_REGISTRY secret is not configured"
+            exit 1
+          fi
+          echo "✅ All secrets are configured"
 
-      - name: Log in to OpenShift Registry
-        working-directory: payment-app
+      - name: Install OpenShift CLI
         run: |
-          echo "${{ secrets.OPENSHIFT_TOKEN }}" | docker login "${{ secrets.OPENSHIFT_REGISTRY }}" \
-            --username=unused --password-stdin
+          curl -LO https://mirror.openshift.com/pub/openshift-v4/clients/ocp/stable/openshift-client-linux.tar.gz
+          tar -xzf openshift-client-linux.tar.gz
+          sudo mv oc /usr/local/bin/
+          oc version --client
 
-      - name: Build and push Docker image
+      - name: Login to OpenShift
+        run: |
+          oc login --token="${{ secrets.OPENSHIFT_TOKEN }}" \
+            --server="${{ secrets.OPENSHIFT_SERVER }}" \
+            --insecure-skip-tls-verify=true
+
+      - name: Build and push Docker image using OpenShift
         working-directory: payment-app
         env:
           IMAGE_TAG: ${{ github.sha }}
+          NAMESPACE: bob-demo-staging
         run: |
-          IMAGE_NAME="${{ secrets.OPENSHIFT_REGISTRY }}/bob-demo-staging/${{ env.APP_NAME }}:${IMAGE_TAG}"
-          docker build --platform linux/amd64 -t "${IMAGE_NAME}" -f Dockerfile .
-          docker push "${IMAGE_NAME}"
+          # Build image locally
+          IMAGE_NAME="${{ secrets.OPENSHIFT_REGISTRY }}/${NAMESPACE}/${{ env.APP_NAME }}:${IMAGE_TAG}"
+          docker build --platform linux/amd64 -t "temp-${{ env.APP_NAME }}:${IMAGE_TAG}" -f Dockerfile .
+          
+          # Save image to tar
+          docker save "temp-${{ env.APP_NAME }}:${IMAGE_TAG}" -o /tmp/image.tar
+          
+          # Import image to OpenShift using oc
+          oc import-image ${{ env.APP_NAME }}:${IMAGE_TAG} \
+            --from=/tmp/image.tar \
+            --confirm \
+            -n ${NAMESPACE} || \
+          oc create imagestream ${{ env.APP_NAME }} -n ${NAMESPACE} && \
+          oc import-image ${{ env.APP_NAME }}:${IMAGE_TAG} \
+            --from=/tmp/image.tar \
+            --confirm \
+            -n ${NAMESPACE}
+          
           echo "IMAGE_NAME=${IMAGE_NAME}" >> $GITHUB_ENV
+          
+          # Cleanup
+          rm /tmp/image.tar
+          docker rmi "temp-${{ env.APP_NAME }}:${IMAGE_TAG}"
 
       - name: Save image name for deployment
         run: echo "${{ env.IMAGE_NAME }}" > image-name.txt
